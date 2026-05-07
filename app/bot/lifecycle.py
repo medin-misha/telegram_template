@@ -22,7 +22,7 @@ def register_lifecycle(dispatcher: Dispatcher, settings: MainSettings) -> None:
     async def on_startup(bot: Bot) -> None:
         """Подготавливает Telegram и системный runtime к старту polling."""
 
-        await bot.delete_webhook(drop_pending_updates=True)
+        await bot.delete_webhook(drop_pending_updates=settings.drop_pending_updates)
         await startup_system_runtime(settings)
         logger.info("Bot %s started in polling mode", settings.project_name)
 

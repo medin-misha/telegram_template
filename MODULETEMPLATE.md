@@ -206,6 +206,25 @@ async def profile_command(message: Message) -> None:
 If a module starts re-implementing authentication through its own backend flow,
 that is almost certainly an architectural mistake.
 
+## Startup Delivery Semantics
+
+The application startup currently calls:
+
+```python
+await bot.delete_webhook(
+    drop_pending_updates=settings.drop_pending_updates
+)
+```
+
+This matters for module design:
+
+- with `drop_pending_updates=True`, old Telegram updates are discarded on startup
+- with `drop_pending_updates=False`, modules may receive updates that were queued
+  before the restart
+
+Module handlers should therefore be written to be safe under repeated delivery
+or delayed delivery when a project decides to disable dropping pending updates.
+
 ## What A Module Must Not Do
 
 - It must not import runtime code directly from `fastapi_template`.

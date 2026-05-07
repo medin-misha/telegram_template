@@ -114,6 +114,7 @@ telegram_template/
 Сейчас он понимает:
 
 - `TOKEN` — обязательный токен Telegram-бота
+- `drop_pending_updates` — управляет тем, очищать ли накопленные Telegram-updates при старте; по умолчанию `True`
 - `BACKEND_URL` — адрес backend-сервиса
 - `BACKEND_API_PREFIX` — API-prefix backend, по умолчанию `/api`
 - `BACKEND_REQUEST_TIMEOUT` — таймаут HTTP-запросов к backend
@@ -123,6 +124,16 @@ telegram_template/
 
 Важно:
 бот не читает настройки базы данных, потому что база должна жить не здесь.
+
+Отдельно про `drop_pending_updates`:
+
+- это значение прокидывается в `bot.delete_webhook(drop_pending_updates=...)` на startup
+- при `True` бот удаляет накопившиеся апдейты и не пытается дообработать старую очередь после простоя
+- это безопасный дефолт для `polling`, когда важнее стартовать из чистого состояния
+- если вам принципиально обработать сообщения, которые пришли во время остановки, установите `drop_pending_updates=false`
+
+Так как `MainSettings` объявлен с `case_sensitive=True` и у поля нет отдельного alias,
+в `.env` сейчас нужно использовать именно ключ `drop_pending_updates`.
 
 ### `app/core/logging.py`
 
@@ -186,11 +197,19 @@ telegram_template/
 
 Сейчас на старте выполняется:
 
-- `delete_webhook(drop_pending_updates=True)`
+- `delete_webhook(drop_pending_updates=settings.drop_pending_updates)`
 - инициализация runtime-ресурсов system-модуля
 
 Это важно для polling-режима:
 если у бота раньше был webhook или накопились старые апдейты, мы очищаем состояние и стартуем чисто.
+
+Что означает `drop_pending_updates`:
+
+- `True` — Telegram удалит накопленную очередь updates
+- `False` — бот после старта сможет получить старые updates через polling
+
+Используйте `False` только если вы действительно готовы обрабатывать старые входящие
+события после рестарта. Для большинства шаблонных сценариев безопаснее оставлять `True`.
 
 Сейчас на остановке выполняется:
 

@@ -25,6 +25,7 @@ class MainSettings(BaseSettings):
     )
 
     project_name: str = "Telegram Template"
+    drop_pending_updates: bool = True
     debug: bool = Field(default=False, validation_alias=AliasChoices("DEBUG", "debug"))
     token: SecretStr = Field(validation_alias="TOKEN")
     backend_url: str | None = Field(default=None, validation_alias="BACKEND_URL")
