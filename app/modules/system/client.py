@@ -8,6 +8,7 @@ HTTP-клиент для интеграции Telegram-бота с backend API.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -54,6 +55,7 @@ class BackendClient:
             method="POST",
             path="/telegram/login",
             json_payload=payload.model_dump(mode="json"),
+            not_found_is_user_absence=True,
         )
         return TelegramUserRead.model_validate(response_data)
 
@@ -75,6 +77,8 @@ class BackendClient:
         method: str,
         path: str,
         json_payload: dict[str, Any],
+        *,
+        not_found_is_user_absence: bool = False,
     ) -> dict[str, Any]:
         """Выполняет JSON-запрос к backend и нормализует базовые ошибки."""
 
@@ -82,17 +86,31 @@ class BackendClient:
 
         try:
             async with self._session.request(method=method, url=url, json=json_payload) as response:
-                return await self._parse_response(response)
+                return await self._parse_response(
+                    response,
+                    not_found_is_user_absence=not_found_is_user_absence,
+                )
         except BackendClientError:
             raise
-        except ClientError as exc:
+        except (ClientError, asyncio.TimeoutError) as exc:
             raise BackendUnavailableError(f"Backend request failed: {exc}") from exc
 
-    async def _parse_response(self, response: ClientResponse) -> dict[str, Any]:
+    async def _parse_response(
+        self,
+        response: ClientResponse,
+        *,
+        not_found_is_user_absence: bool,
+    ) -> dict[str, Any]:
         """Преобразует HTTP-ответ в словарь или бросает доменную ошибку."""
 
-        if response.status == 404:
+        if response.status == 404 and not_found_is_user_absence:
             raise BackendUserNotFoundError("Telegram user not found in backend.")
+
+        if response.status >= 500:
+            body = await response.text()
+            raise BackendUnavailableError(
+                f"Backend returned server error {response.status}: {body}"
+            )
 
         if response.status >= 400:
             body = await response.text()

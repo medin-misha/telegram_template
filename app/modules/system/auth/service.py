@@ -15,11 +15,12 @@ from datetime import UTC, datetime
 from aiogram.types import User
 
 from app.modules.system.client import (
+    BackendClient,
     BackendClientError,
     BackendUserNotFoundError,
     get_backend_client,
 )
-from app.modules.system.schemas import TelegramUserCreatePayload
+from app.modules.system.schemas import TelegramUserCreatePayload, TelegramUserRead
 
 from .cache import AuthSession, auth_cache
 
@@ -51,8 +52,7 @@ async def ensure_authenticated(telegram_user: User, no_cache: bool = False) -> A
         backend_user = await client.login_telegram_user(telegram_user.id)
     except BackendUserNotFoundError:
         logger.info("Telegram user %s not found; provisioning via backend.", telegram_user.id)
-        await client.create_telegram_user(_build_create_payload(telegram_user))
-        backend_user = await client.login_telegram_user(telegram_user.id)
+        backend_user = await _provision_backend_user(client, telegram_user)
     except BackendClientError:
         raise
     except Exception as exc:
@@ -66,6 +66,22 @@ async def ensure_authenticated(telegram_user: User, no_cache: bool = False) -> A
     if not no_cache:
         auth_cache.set(session)
     return session
+
+
+async def _provision_backend_user(
+    client: BackendClient,
+    telegram_user: User,
+) -> TelegramUserRead:
+    """Регистрирует пользователя и повторяет login как единую фазу auth-flow."""
+
+    await client.create_telegram_user(_build_create_payload(telegram_user))
+
+    try:
+        return await client.login_telegram_user(telegram_user.id)
+    except BackendUserNotFoundError as exc:
+        raise AuthenticationFlowError(
+            f"Backend did not expose telegram user {telegram_user.id} after provisioning."
+        ) from exc
 
 
 def _build_create_payload(telegram_user: User) -> TelegramUserCreatePayload:

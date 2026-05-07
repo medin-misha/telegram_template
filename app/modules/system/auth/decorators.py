@@ -16,6 +16,7 @@ from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from app.core.context import reset_current_auth_session, set_current_auth_session
 from app.modules.system.client import (
+    BackendClientError,
     BackendNotConfiguredError,
     BackendUnavailableError,
     BackendUnexpectedResponseError,
@@ -59,6 +60,10 @@ def login_required(
                 return None
             except BackendUnexpectedResponseError:
                 logger.exception("Backend returned unexpected response during auth flow.")
+                await _answer_event(event, messages["auth_backend_unexpected_response"])
+                return None
+            except BackendClientError:
+                logger.exception("Unhandled backend client error escaped auth flow.")
                 await _answer_event(event, messages["auth_backend_unexpected_response"])
                 return None
             except AuthenticationFlowError:
