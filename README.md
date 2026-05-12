@@ -25,18 +25,36 @@
 
 ## Текущий функционал
 
-Сейчас в шаблоне есть один системный модуль:
+Сейчас в шаблоне подключены три модуля с разной ролью:
+
+- `system` — обязательный системный infrastructure layer
+- `rmq_module` — общий RabbitMQ transport-layer
+- `test_rmq_module` — демонстрационный модуль для проверки RMQ wiring
+
+Системный модуль предоставляет базовые команды:
 
 - `/start` — проверка, что бот запущен
 - `/authstatus` — базовая проверка auth-сессии через backend
 - `/usersysinfo` — техническая информация о пользователе и runtime в debug-режиме
 
-Этот модуль теперь является обязательным infrastructure layer для следующих модулей:
+Он также является обязательным infrastructure layer для остальных Telegram-модулей:
 
 - хранит in-memory auth cache
 - предоставляет `aiohttp`-клиент для backend
 - даёт `login_required` декоратор для защищённых хендлеров
 - публикует auth-сессию в runtime context текущего update
+
+`rmq_module` не добавляет пользовательских Telegram-команд, но встраивается в
+общий lifecycle и поднимает RabbitMQ runtime, если есть consumer
+registrations и включён `RABBITMQ_CONSUMER_ENABLED=true`.
+
+`test_rmq_module` нужен как встроенный пример использования `rmq_module`:
+
+- регистрирует тестовый consumer во время импорта
+- добавляет команду `/rmqping`, которая публикует тестовое сообщение в RabbitMQ
+
+Если вам не нужен демонстрационный RMQ-сценарий, уберите `test_rmq_module` из
+`app/bot/registry.py`.
 
 ## Структура проекта
 
@@ -53,17 +71,28 @@ telegram_template/
 │   │   ├── context.py
 │   │   └── logging.py
 │   └── modules/
-│       └── system/
-│           ├── auth/
-│           ├── AGENTS.md
-│           ├── README.md
-│           ├── client.py
-│           ├── config.py
+│       ├── rmq_module/
+│       │   ├── AGENTS.md
+│       │   ├── README.md
+│       │   ├── config.py
+│       │   ├── handlers.py
+│       │   ├── runtime.py
+│       │   ├── schemas/
+│       │   └── services/
+│       ├── system/
+│       │   ├── auth/
+│       │   ├── AGENTS.md
+│       │   ├── README.md
+│       │   ├── client.py
+│       │   ├── config.py
+│       │   ├── handlers.py
+│       │   ├── messages.json
+│       │   ├── messages.py
+│       │   ├── runtime.py
+│       │   └── schemas.py
+│       └── test_rmq_module/
 │           ├── handlers.py
-│           ├── messages.json
-│           ├── messages.py
-│           ├── runtime.py
-│           └── schemas.py
+│           └── services/
 ├── docs/
 │   └── plans/
 ├── main.py
@@ -178,7 +207,9 @@ telegram_template/
 Сейчас там явная регистрация:
 
 - импортируется `system_router`
-- подключается через `dispatcher.include_router(...)`
+- импортируется пустой инфраструктурный `rmq_router`
+- импортируется `test_rmq_router` для demo-команды `/rmqping`
+- каждый роутер подключается через `dispatcher.include_router(...)`
 
 Это сделано намеренно.
 
@@ -190,6 +221,7 @@ telegram_template/
 - все активные модули видны в одном месте
 
 Если вы добавляете новый модуль, именно здесь он становится частью приложения.
+Точно так же здесь можно явно отключить demo-модули перед production-использованием шаблона.
 
 ### `app/bot/lifecycle.py`
 
@@ -199,6 +231,7 @@ telegram_template/
 
 - `delete_webhook(drop_pending_updates=settings.drop_pending_updates)`
 - инициализация runtime-ресурсов system-модуля
+- попытка поднять runtime `rmq_module`
 
 Это важно для polling-режима:
 если у бота раньше был webhook или накопились старые апдейты, мы очищаем состояние и стартуем чисто.
@@ -216,6 +249,7 @@ telegram_template/
 - закрытие `bot.session`
 - закрытие backend HTTP client
 - очистка auth cache
+- остановка RMQ runtime, если он был запущен
 
 Это нужно, чтобы корректно закрывать сетевые ресурсы aiogram.
 
